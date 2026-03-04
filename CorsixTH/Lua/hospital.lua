@@ -110,6 +110,12 @@ function Hospital:Hospital(world, avail_rooms, name)
     boiler_repair_count = nil, -- (int) Number of items to repair.
     heating_broke = false -- (bool) Whether the heating system is broken down currently.
   }
+  
+  -- Vomit wave variables.
+  self.vomit_wave = {
+    count = 0.0, -- (int) Days rest for vomit wave.
+    active = false -- (bool) Whether the vomit wave is active.
+  }
 
   -- Number of tile objects of each category in the hospital.
   self.tile_object_counts = {
@@ -118,6 +124,7 @@ function Hospital:Hospital(world, avail_rooms, name)
     plant = 0,
     reception_desk = 0,
     bench = 0,
+    litter = 0,
     general = 0,
   }
 
@@ -503,6 +510,32 @@ function Hospital:afterLoad(old, new)
     self.hosp_cheats.active_cheats["spawn_rate_cheat"] = self.spawn_rate_cheat
     self.spawn_rate_cheat = nil
   end
+  
+  if old < 242 then
+    -- Count tile objects of this hospital from scratch.
+    self.tile_object_counts = {
+      extinguisher = 0,
+      radiator = 0,
+      plant = 0,
+      reception_desk = 0,
+      bench = 0,
+      litter = 0,
+      general = 0,
+    }
+    local width, height = self.world.map.th:size()
+    for x = 1, width do
+      for y = 1, height do
+        local objects = self.world:getObjects(x, y)
+        if objects then
+          for _, object in ipairs(objects) do
+            if object.hospital == self then
+              self:addTileObject(object.object_type.count_category)
+            end
+          end
+        end
+      end
+    end
+  end
 
   -- Update other objects in the hospital (added in version 106).
   if self.epidemic then self.epidemic:afterLoad(old, new) end
@@ -689,6 +722,49 @@ function Hospital:_fixBoiler()
   end
 end
 
+function Hospital:vomitWave()
+  if not self.opened then return end -- There is no one to vomit if hospital is closed.
+  if not self.hospital_littered then return end -- Vomit wave will not start without any litter.
+  if not self:_isEnoughLitter() then return end -- Check if there is enough litter
+  
+  local vomit_wave = self.vomit_wave
+  vomit_wave.count = math.random(5,10) -- Set amount of days for vomit wave
+  -- Warn the player of the vomit wave
+  self:adviseVomitWave()
+  -- Make patiens vomit
+  self:triggerVomitWave()
+end
+
+function Hospital:triggerVomitWave()
+  for _, patient in ipairs(self.patients) do
+    -- Only use patients that are in the hospital.
+    local tx, ty = patient.tile_x, patient.tile_y
+    if tx and ty and self:isInHospital(tx, ty) then
+      patient:vomit()
+    end
+  end
+end
+
+function Hospital:_isEnoughLitter()
+  local litterCountLimit = 11
+  local litterCount = self:countLitter()
+  if litterCount < litterCountLimit then
+    return
+  end
+end
+
+function Hospital:_fixVomitWave()
+  local vomit_wave = self.vomit_wave
+  if not vomit_wave.active then return end -- No vomit wave active
+  if self:_isEnoughLitter() then -- If too much litter, vomit again
+    self:_triggerVomitWave()
+  else
+    vomit_wave.count = vomit_wave.count - 1
+  end
+  
+  vomit_wave.count = vomit_wave.count - 1
+end
+
 --! Daily update of the ratholes.
 --!param self (Hospital) hospital being updated.
 local function dailyUpdateRatholes(self)
@@ -755,20 +831,22 @@ function Hospital:onEndDay()
   end
 
   self:_fixBoiler() -- Boiler always needs work (especially if broken).
+  self:_fixVomitWave() -- 
 
   -- Do we have a disaster?
   self.disasterless_days = self.disasterless_days - 1
   if self.disasterless_days <= 0 then
     self.disasterless_days = self:daysUntilNextDisaster()
 
-    local disaster_type = math.random(1, 3) -- TODO: Set to 3 until the vomit wave is implemented.
+    local disaster_type = math.random(1, 4)
     -- disaster_type == 1 is for skipping the disaster, nothing happens.
     if disaster_type == 2 then
       self:boilerBreakdown(1) -- max heat
     elseif disaster_type == 3 then
       self:boilerBreakdown(0) -- min heat
+    elseif disaster_type == 4 then
+      self:vomitWave()
     end
-    -- TODO: Implement vomit wave disaster for disaster_type == 4
   end
 
   -- Calculate heating cost daily.  Divide the monthly cost by the number of days in that month
@@ -1517,6 +1595,12 @@ end
 --!return (int) Number of fire extinguishers in the hospital.
 function Hospital:countFireExtinguishers()
   return self.tile_object_counts["extinguisher"]
+end
+
+--! Get the number of litter in the hospital.
+--!return (int) Number of litter in the hospital.
+function Hospital:countLitter()
+  return self.tile_object_counts["litter"]
 end
 
 --! Get the number of general objects in the hospital.
@@ -2350,6 +2434,10 @@ end
 
 --! Announces a machine needing repair
 function Hospital:announceRepair(room)
+end
+
+--! Announces a vomit wave
+function Hospital:adviseVomitWave()
 end
 
 function Hospital:onSpawnVIP()

@@ -1,3 +1,10 @@
+
+local zbs = '/opt/zbstudio'
+package.path = zbs .. '/lualibs/?/?.lua;' .. zbs .. '/lualibs/?.lua;' .. package.path
+package.cpath = zbs .. '/bin/linux/x64/?.dll;' .. zbs ..'/bin/linux/x64/clibs54/?.dll;' .. package.cpath
+require('mobdebug').start()
+require('mobdebug').coro()
+
 ---- CorsixTH bootstrap code -------------------------------------------------
 -- This is not a configuration file and should not be edited. See config.txt
 -- for CorsixTH configuration options.
